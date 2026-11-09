@@ -21,9 +21,28 @@ jobs:
         with:
           node-version: "latest"
 
+      - name: Identify dependency runtime
+        id: dependency-runtime
+        shell: bash
+        run: |
+          IDENTITY="$(node -p 'JSON.stringify([process.version, process.versions.modules, process.platform, process.arch])')|$(npm --version)|${ImageOS:-}|${ImageVersion:-}"
+          echo "fingerprint=$(printf '%s' "$IDENTITY" | sha256sum | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Restore installed Node dependencies
+        id: installed-dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules
+          key: installed-node-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.dependency-runtime.outputs.fingerprint }}-${{ hashFiles('package.json', 'package-lock.json', 'yarn.lock', '.npmrc', '.yarnrc.yml') }}-end
       - name: Install dependencies
+        if: steps.installed-dependencies.outputs.cache-hit != 'true'
         run: npm install
 
+      - name: Save installed Node dependencies
+        if: steps.installed-dependencies.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules
+          key: ${{ steps.installed-dependencies.outputs.cache-primary-key }}
       - name: Build project
         run: |
           npx wrangler deploy src/worker.js --name bpb-worker-panel --compatibility-flag [nodejs_compat] --compatibility-date 2024-10-26 --dry-run --outdir=dist
